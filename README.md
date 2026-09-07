@@ -12,8 +12,8 @@ The first scope is intentionally narrow:
 - PAM authentication through the `swaylock` PAM service;
 - no image loading, GPU renderer, GTK, Cairo, Pango, animations, or effects.
 
-The default color matches the current `waybg-rs` setup (`#4B3F72`) and the
-default screen-off countdown is 600 seconds after locking.
+The built-in defaults are `#4B3F72` and a 600-second screen-off countdown;
+these can be overridden in the config file.
 
 ## Build
 
@@ -21,10 +21,28 @@ default screen-off countdown is 600 seconds after locking.
 cargo build --release
 ```
 
+## Code layout
+
+- `config.rs` loads defaults, the config file, and command-line overrides.
+- `auth.rs` contains the PAM authentication boundary.
+- `render.rs` contains the SHM renderer, bitmap font, and lock-surface layout.
+- `main.rs` owns the Wayland session-lock lifecycle and input/event handling.
+
 ## Usage
 
 ```sh
-waylock-rs --color 4B3F72 --off-after 600
+waylock-rs
+```
+
+The default configuration file is `~/.config/waylock-rs/config`; use
+`--config PATH` to select another file. Command-line options override file
+values. See [`config.example`](config.example) for the supported keys:
+
+```ini
+color = 4B3F72
+off-after = 300
+power-off-command = niri msg action power-off-monitors
+pam-service = swaylock
 ```
 
 The protocol is compositor-neutral, but a compositor must implement
@@ -33,11 +51,10 @@ provide it. The client must be started inside the graphical session so it
 inherits `WAYLAND_DISPLAY`.
 
 The countdown is visual by default. To power off displays when it reaches zero,
-provide a compositor-specific command. For Niri, for example:
+provide a compositor-specific command in the config file. For Niri:
 
-```sh
-waylock-rs --color 4B3F72 --off-after 600 \
-  --power-off-command niri msg action power-off-monitors
+```ini
+power-off-command = niri msg action power-off-monitors
 ```
 
 Other compositors can use their own display-power command, or leave this to an

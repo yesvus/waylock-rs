@@ -1,0 +1,12 @@
+# Solid background color in RRGGBB form.
+color = 4B3F72
+
+# Seconds from lock start until the power-off command is run.
+off-after = 300
+
+# Optional compositor-specific command. Leave empty to disable the button and
+# automatic power-off action; an idle daemon can handle display power instead.
+power-off-command = niri msg action power-off-monitors
+
+# PAM service file under /etc/pam.d.
+pam-service = swaylock
