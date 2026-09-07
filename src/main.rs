@@ -25,6 +25,7 @@ use smithay_client_toolkit::{
     seat::{
         Capability, SeatHandler, SeatState,
         keyboard::{KeyEvent, KeyboardHandler, Keysym},
+        pointer::{BTN_LEFT, PointerEvent, PointerEventKind, PointerHandler},
     },
     session_lock::{
         SessionLock, SessionLockHandler, SessionLockState, SessionLockSurface,
@@ -38,7 +39,7 @@ use smithay_client_toolkit::{
 use wayland_client::{
     Connection, Proxy, QueueHandle,
     globals::registry_queue_init,
-    protocol::{wl_buffer, wl_keyboard, wl_output, wl_seat, wl_shm, wl_surface},
+    protocol::{wl_buffer, wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
 };
 
 const DEFAULT_COLOR: u32 = 0x4B3F72;
@@ -61,6 +62,26 @@ struct LockSurfaceState {
     height: u32,
     pool: Option<SlotPool>,
     buffer: Option<Buffer>,
+    button: ButtonRect,
+}
+
+#[derive(Clone, Copy, Default)]
+struct ButtonRect {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    visible: bool,
+}
+
+impl ButtonRect {
+    fn contains(self, x: f64, y: f64) -> bool {
+        self.visible
+            && x >= self.x as f64
+            && x < (self.x + self.width) as f64
+            && y >= self.y as f64
+            && y < (self.y + self.height) as f64
+    }
 }
 
 struct App {
@@ -74,6 +95,7 @@ struct App {
     session_lock: Option<SessionLock>,
     surfaces: Vec<LockSurfaceState>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
+    pointer: Option<wl_pointer::WlPointer>,
     auth_sender: Sender<AuthResult>,
     config: Config,
     started: Instant,
@@ -112,6 +134,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         session_lock: Some(session_lock.clone()),
         surfaces: Vec::new(),
         keyboard: None,
+        pointer: None,
         auth_sender: channel::<AuthResult>().0,
         config,
         started: Instant::now(),
@@ -131,6 +154,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             height: 0,
             pool: None,
             buffer: None,
+            button: ButtonRect::default(),
         });
     }
 
@@ -219,12 +243,7 @@ impl App {
         }
 
         if !self.monitors_off && self.started.elapsed().as_secs() >= self.config.off_after {
-            self.monitors_off = true;
-            if let Some(command) = &self.config.power_off_command {
-                if let Some((program, args)) = command.split_first() {
-                    let _ = Command::new(program).args(args).spawn();
-                }
-            }
+            self.power_off_monitors();
         }
 
         self.redraw_all();
@@ -244,7 +263,16 @@ impl App {
 
         for surface in &mut self.surfaces {
             if surface.width != 0 && surface.height != 0 {
-                draw_surface(surface, &qh, color, &clock, &timer, password_len, error);
+                draw_surface(
+                    surface,
+                    &qh,
+                    color,
+                    &clock,
+                    &timer,
+                    password_len,
+                    error,
+                    self.config.power_off_command.is_some(),
+                );
             }
         }
     }
@@ -263,6 +291,15 @@ impl App {
                 self.password.clear();
                 self.auth_error_until = Some(Instant::now() + Duration::from_secs(2));
                 self.redraw_all();
+            }
+        }
+    }
+
+    fn power_off_monitors(&mut self) {
+        self.monitors_off = true;
+        if let Some(command) = &self.config.power_off_command {
+            if let Some((program, args)) = command.split_first() {
+                let _ = Command::new(program).args(args).spawn();
             }
         }
     }
@@ -372,6 +409,7 @@ impl SessionLockHandler for App {
             &format!("OFF IN {}", format_duration(self.config.off_after)),
             0,
             false,
+            self.config.power_off_command.is_some(),
         );
     }
 }
@@ -393,6 +431,9 @@ impl SeatHandler for App {
         if capability == Capability::Keyboard && self.keyboard.is_none() {
             self.keyboard = self.seat_state.get_keyboard(qh, &seat, None).ok();
         }
+        if capability == Capability::Pointer && self.pointer.is_none() {
+            self.pointer = self.seat_state.get_pointer(qh, &seat).ok();
+        }
     }
 
     fn remove_capability(
@@ -404,6 +445,9 @@ impl SeatHandler for App {
     ) {
         if capability == Capability::Keyboard {
             self.keyboard.take();
+        }
+        if capability == Capability::Pointer {
+            self.pointer.take();
         }
     }
 
@@ -476,6 +520,38 @@ impl KeyboardHandler for App {
         _raw_modifiers: smithay_client_toolkit::seat::keyboard::RawModifiers,
         _layout: u32,
     ) {
+    }
+}
+
+impl PointerHandler for App {
+    fn pointer_frame(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _pointer: &wl_pointer::WlPointer,
+        events: &[PointerEvent],
+    ) {
+        let mut clicked = false;
+        for event in events {
+            if let PointerEventKind::Press { button, .. } = event.kind {
+                if button != BTN_LEFT {
+                    continue;
+                }
+                if self
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.surface.wl_surface() == &event.surface)
+                    .is_some_and(|surface| {
+                        surface.button.contains(event.position.0, event.position.1)
+                    })
+                {
+                    clicked = true;
+                }
+            }
+        }
+        if clicked {
+            self.power_off_monitors();
+        }
     }
 }
 
@@ -578,7 +654,20 @@ fn draw_surface(
     timer: &str,
     password_len: usize,
     show_error: bool,
+    button_enabled: bool,
 ) {
+    let button_height = (surface.height / 25).clamp(48, 80);
+    let button_width = (surface.width / 3).clamp(220, 360);
+    surface.button = ButtonRect {
+        x: surface.width.saturating_sub(button_width) / 2,
+        y: surface
+            .height
+            .saturating_sub(button_height + surface.height / 10),
+        width: button_width,
+        height: button_height,
+        visible: button_enabled,
+    };
+
     let Some(pool) = surface.pool.as_mut() else {
         return;
     };
@@ -642,6 +731,31 @@ fn draw_surface(
             0xFFFFA0A0,
         );
     }
+    if surface.button.visible {
+        let button = surface.button;
+        fill_rect(
+            canvas,
+            surface.width,
+            button.x,
+            button.y,
+            button.width,
+            button.height,
+            0xFF2B2145,
+        );
+        let text_scale = (surface.height / 360).clamp(2, 4);
+        let text = "SCREEN OFF";
+        let text_width = text.chars().count() as u32 * 6 * text_scale - text_scale;
+        draw_text(
+            canvas,
+            surface.width,
+            surface.height,
+            text,
+            button.x + button.width.saturating_sub(text_width) / 2,
+            button.y + button.height.saturating_sub(7 * text_scale) / 2,
+            text_scale,
+            0xFFFFFFFF,
+        );
+    }
 
     let _ = buffer.attach_to(surface.surface.wl_surface());
     surface
@@ -651,6 +765,25 @@ fn draw_surface(
     surface.surface.wl_surface().commit();
     surface.buffer = Some(buffer);
     let _ = qh;
+}
+
+fn fill_rect(
+    canvas: &mut [u8],
+    width: u32,
+    x: u32,
+    y: u32,
+    rect_width: u32,
+    rect_height: u32,
+    color: u32,
+) {
+    for row in y..y.saturating_add(rect_height) {
+        for column in x..x.saturating_add(rect_width) {
+            let offset = ((row * width + column) * 4) as usize;
+            if offset + 4 <= canvas.len() {
+                canvas[offset..offset + 4].copy_from_slice(&color.to_le_bytes());
+            }
+        }
+    }
 }
 
 fn draw_password_dots(
@@ -781,6 +914,12 @@ fn glyph(character: char) -> Option<[u8; 7]> {
         'A' => [
             0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
         ],
+        'C' => [
+            0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110,
+        ],
+        'D' => [
+            0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110,
+        ],
         'E' => [
             0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111,
         ],
@@ -839,6 +978,7 @@ fn format_duration(seconds: u64) -> String {
 smithay_client_toolkit::delegate_compositor!(App);
 smithay_client_toolkit::delegate_keyboard!(App);
 smithay_client_toolkit::delegate_output!(App);
+smithay_client_toolkit::delegate_pointer!(App);
 smithay_client_toolkit::delegate_registry!(App);
 smithay_client_toolkit::delegate_seat!(App);
 smithay_client_toolkit::delegate_session_lock!(App);

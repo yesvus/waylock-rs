@@ -8,6 +8,7 @@ The first scope is intentionally narrow:
 - solid-color shared-memory background;
 - a built-in bitmap clock;
 - a built-in screen-off countdown and optional power-off command;
+- a clickable `SCREEN OFF` button when a power-off command is configured;
 - PAM authentication through the `swaylock` PAM service;
 - no image loading, GPU renderer, GTK, Cairo, Pango, animations, or effects.
 
@@ -41,6 +42,9 @@ waylock-rs --color 4B3F72 --off-after 600 \
 
 Other compositors can use their own display-power command, or leave this to an
 idle daemon such as `swayidle`.
+
+When the command is configured, the same action is available from the visible
+`SCREEN OFF` button on the lock surface.
 
 This is an early implementation. It should be tested manually with the real
 session before replacing a known-good locker in an idle command.
