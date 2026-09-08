@@ -101,15 +101,6 @@ pub(crate) fn draw_surface(
         clock_scale,
         0xFFFFFFFF,
     );
-    draw_centered(
-        canvas,
-        surface.width,
-        surface.height,
-        content.timer,
-        surface.height / 2 + clock_scale * 14,
-        label_scale,
-        0xFFD8D2E8,
-    );
     if content.show_error {
         draw_centered(
             canvas,
@@ -146,6 +137,17 @@ pub(crate) fn draw_surface(
             0xFFFFFFFF,
         );
     }
+
+    let timer_scale = (label_scale / 2).max(1);
+    draw_centered(
+        canvas,
+        surface.width,
+        surface.height,
+        content.timer,
+        surface.button.y + surface.button.height + timer_scale * 4,
+        timer_scale,
+        0xFFD8D2E8,
+    );
 
     let _ = buffer.attach_to(surface.surface.wl_surface());
     surface
