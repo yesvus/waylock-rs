@@ -14,6 +14,7 @@ use auth::{AuthResult, authenticate};
 use config::{Config, parse_args};
 use render::{
     ButtonRect, LockSurfaceState, SurfaceContent, draw_surface, format_duration, local_clock,
+    local_date,
 };
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
@@ -163,6 +164,7 @@ impl App {
         let qh = self.qh.clone();
         let color = self.config.color;
         let clock = local_clock();
+        let date = local_date();
         let remaining = self
             .config
             .off_after
@@ -179,6 +181,7 @@ impl App {
                     SurfaceContent {
                         background: color,
                         clock: &clock,
+                        date: &date,
                         timer: &timer,
                         password_len,
                         show_error: error,
@@ -313,6 +316,7 @@ impl SessionLockHandler for App {
             SurfaceContent {
                 background: self.config.color,
                 clock: &local_clock(),
+                date: &local_date(),
                 timer: &format!("OFF IN {}", format_duration(self.config.off_after)),
                 password_len: 0,
                 show_error: false,

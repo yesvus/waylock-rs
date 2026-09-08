@@ -35,6 +35,7 @@ pub(crate) struct LockSurfaceState {
 pub(crate) struct SurfaceContent<'a> {
     pub(crate) background: u32,
     pub(crate) clock: &'a str,
+    pub(crate) date: &'a str,
     pub(crate) timer: &'a str,
     pub(crate) password_len: usize,
     pub(crate) show_error: bool,
@@ -91,6 +92,16 @@ pub(crate) fn draw_surface(
         surface.height / 2 - clock_scale * 10,
         clock_scale,
         0xFFFFFFFF,
+    );
+    let date_scale = (label_scale / 2).max(1);
+    draw_centered(
+        canvas,
+        surface.width,
+        surface.height,
+        content.date,
+        surface.height / 2 - clock_scale * 3 + date_scale * 2,
+        date_scale,
+        0xFFD8D2E8,
     );
     draw_password_dots(
         canvas,
@@ -304,6 +315,27 @@ fn glyph(character: char) -> Option<[u8; 7]> {
         ':' => [
             0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b00000,
         ],
+        'B' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110,
+        ],
+        'H' => [
+            0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
+        ],
+        'J' => [
+            0b00001, 0b00001, 0b00001, 0b00001, 0b00001, 0b10001, 0b01110,
+        ],
+        'L' => [
+            0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111,
+        ],
+        'M' => [
+            0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001,
+        ],
+        'U' => [
+            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
+        'V' => [
+            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100,
+        ],
         'A' => [
             0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
         ],
@@ -366,4 +398,18 @@ pub(crate) fn local_clock() -> String {
 
 pub(crate) fn format_duration(seconds: u64) -> String {
     format!("{:02}:{:02}", seconds / 60, seconds % 60)
+}
+
+const WEEKDAYS: [&str; 7] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const MONTHS: [&str; 12] = [
+    "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+];
+
+pub(crate) fn local_date() -> String {
+    let now = unsafe { libc::time(std::ptr::null_mut()) };
+    let mut local = unsafe { std::mem::zeroed::<libc::tm>() };
+    unsafe { libc::localtime_r(&now, &mut local) };
+    let weekday = WEEKDAYS[local.tm_wday.clamp(0, 6) as usize];
+    let month = MONTHS[local.tm_mon.clamp(0, 11) as usize];
+    format!("{weekday} {month} {}", local.tm_mday)
 }
