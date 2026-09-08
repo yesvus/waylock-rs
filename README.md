@@ -3,6 +3,8 @@
 A deliberately small screen locker for Wayland compositors implementing
 `ext-session-lock-v1`.
 
+![Lock screen](docs/screenshots/lock-screen.png)
+
 The first scope is intentionally narrow:
 
 - solid-color shared-memory background;
