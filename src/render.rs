@@ -103,6 +103,20 @@ pub(crate) fn draw_surface(
         date_scale,
         0xFFD8D2E8,
     );
+    let input_width = (surface.width / 4).clamp(220, 360);
+    let input_height = clock_scale * 4;
+    let input_x = surface.width.saturating_sub(input_width) / 2;
+    let input_y = (surface.height / 2 + clock_scale * 4).saturating_sub(clock_scale);
+    draw_rect_outline(
+        canvas,
+        surface.width,
+        input_x,
+        input_y,
+        input_width,
+        input_height,
+        (clock_scale / 4).max(1),
+        0xFFD8D2E8,
+    );
     draw_password_dots(
         canvas,
         surface.width,
@@ -187,6 +201,39 @@ fn fill_rect(
             }
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_rect_outline(
+    canvas: &mut [u8],
+    canvas_width: u32,
+    x: u32,
+    y: u32,
+    rect_width: u32,
+    rect_height: u32,
+    thickness: u32,
+    color: u32,
+) {
+    fill_rect(canvas, canvas_width, x, y, rect_width, thickness, color);
+    fill_rect(
+        canvas,
+        canvas_width,
+        x,
+        y.saturating_add(rect_height.saturating_sub(thickness)),
+        rect_width,
+        thickness,
+        color,
+    );
+    fill_rect(canvas, canvas_width, x, y, thickness, rect_height, color);
+    fill_rect(
+        canvas,
+        canvas_width,
+        x.saturating_add(rect_width.saturating_sub(thickness)),
+        y,
+        thickness,
+        rect_height,
+        color,
+    );
 }
 
 fn draw_password_dots(
