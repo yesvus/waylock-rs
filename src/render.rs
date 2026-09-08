@@ -84,6 +84,17 @@ pub(crate) fn draw_surface(
 
     let clock_scale = (surface.height / 120).clamp(4, 12);
     let label_scale = (clock_scale / 2).max(2);
+    let date_scale = (label_scale / 2).max(1);
+    let date_margin_top = (surface.height / 18).clamp(24, 120);
+    draw_centered(
+        canvas,
+        surface.width,
+        surface.height,
+        content.date,
+        date_margin_top,
+        date_scale,
+        0xFFD8D2E8,
+    );
     draw_centered(
         canvas,
         surface.width,
@@ -92,16 +103,6 @@ pub(crate) fn draw_surface(
         surface.height / 2 - clock_scale * 10,
         clock_scale,
         0xFFFFFFFF,
-    );
-    let date_scale = (label_scale / 2).max(1);
-    draw_centered(
-        canvas,
-        surface.width,
-        surface.height,
-        content.date,
-        surface.height / 2 - clock_scale * 3 + date_scale * 2,
-        date_scale,
-        0xFFD8D2E8,
     );
     let input_width = (surface.width / 4).clamp(220, 360);
     let input_height = clock_scale * 4;
@@ -117,12 +118,14 @@ pub(crate) fn draw_surface(
         (clock_scale / 4).max(1),
         0xFFD8D2E8,
     );
+    let dot_size = clock_scale.max(3);
+    let dot_y = input_y + (input_height.saturating_sub(dot_size)) / 2;
     draw_password_dots(
         canvas,
         surface.width,
         surface.height,
         content.password_len,
-        surface.height / 2 + clock_scale * 4,
+        dot_y,
         clock_scale,
         0xFFFFFFFF,
     );
