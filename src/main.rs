@@ -59,7 +59,7 @@ pub(crate) struct App {
     pointer: Option<wl_pointer::WlPointer>,
     auth_sender: Sender<AuthResult>,
     config: Config,
-    started: Instant,
+    last_activity: Instant,
     password: String,
     auth_in_flight: bool,
     auth_error_until: Option<Instant>,
@@ -98,7 +98,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         pointer: None,
         auth_sender: channel::<AuthResult>().0,
         config,
-        started: Instant::now(),
+        last_activity: Instant::now(),
         password: String::new(),
         auth_in_flight: false,
         auth_error_until: None,
@@ -152,7 +152,7 @@ impl App {
             self.auth_error_until = None;
         }
 
-        if !self.monitors_off && self.started.elapsed().as_secs() >= self.config.off_after {
+        if !self.monitors_off && self.last_activity.elapsed().as_secs() >= self.config.off_after {
             self.power_off_monitors();
         }
 
@@ -166,7 +166,7 @@ impl App {
         let remaining = self
             .config
             .off_after
-            .saturating_sub(self.started.elapsed().as_secs());
+            .saturating_sub(self.last_activity.elapsed().as_secs());
         let timer = format!("OFF IN {}", format_duration(remaining));
         let error = self.auth_error_until.is_some();
         let password_len = self.password.chars().count();
@@ -207,6 +207,11 @@ impl App {
         }
     }
 
+    fn note_activity(&mut self) {
+        self.last_activity = Instant::now();
+        self.monitors_off = false;
+    }
+
     fn power_off_monitors(&mut self) {
         self.monitors_off = true;
         if let Some(command) = &self.config.power_off_command {
@@ -234,6 +239,7 @@ impl App {
     }
 
     fn handle_key(&mut self, event: KeyEvent) {
+        self.note_activity();
         if event.keysym == Keysym::Return || event.keysym == Keysym::KP_Enter {
             self.submit_password();
             return;
@@ -433,6 +439,9 @@ impl PointerHandler for App {
         _pointer: &wl_pointer::WlPointer,
         events: &[PointerEvent],
     ) {
+        if !events.is_empty() {
+            self.note_activity();
+        }
         let mut clicked = false;
         for event in events {
             if let PointerEventKind::Press { button, .. } = event.kind {
