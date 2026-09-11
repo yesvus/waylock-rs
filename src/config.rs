@@ -151,7 +151,7 @@ fn apply_config_value(
                 .map_err(|_| format!("{source}: invalid off-after"))?;
         }
         "power-off-command" | "power_off_command" => {
-            config.power_off_command = if value.is_empty() {
+            config.power_off_command = if value.trim().is_empty() {
                 None
             } else {
                 Some(value.split_whitespace().map(String::from).collect())
@@ -219,6 +219,13 @@ mod tests {
     fn empty_power_off_command_disables_action() {
         let mut config = Config::default();
         apply_config_value(&mut config, "power-off-command", "", "test").unwrap();
+        assert!(config.power_off_command.is_none());
+    }
+
+    #[test]
+    fn whitespace_power_off_command_disables_action() {
+        let mut config = Config::default();
+        apply_config_value(&mut config, "power-off-command", "   ", "test").unwrap();
         assert!(config.power_off_command.is_none());
     }
 }

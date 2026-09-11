@@ -65,6 +65,7 @@ pub(crate) struct App {
     auth_in_flight: bool,
     auth_error_until: Option<Instant>,
     monitors_off: bool,
+    last_power_off_error_log: Option<Instant>,
     exit: bool,
 }
 
@@ -104,6 +105,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         auth_in_flight: false,
         auth_error_until: None,
         monitors_off: false,
+        last_power_off_error_log: None,
         exit: false,
     };
 
@@ -153,7 +155,12 @@ impl App {
             self.auth_error_until = None;
         }
 
-        if !self.monitors_off && self.last_activity.elapsed().as_secs() >= self.config.off_after {
+        if should_power_off(
+            self.monitors_off,
+            self.last_activity.elapsed().as_secs(),
+            self.config.off_after,
+            self.config.power_off_command.is_some(),
+        ) {
             self.power_off_monitors();
         }
 
@@ -165,11 +172,11 @@ impl App {
         let color = self.config.color;
         let clock = local_clock();
         let date = local_date();
-        let remaining = self
-            .config
-            .off_after
-            .saturating_sub(self.last_activity.elapsed().as_secs());
-        let timer = format!("OFF IN {}", format_duration(remaining));
+        let timer = power_off_timer_text(
+            self.config.off_after,
+            self.last_activity.elapsed().as_secs(),
+            self.config.power_off_command.is_some(),
+        );
         let error = self.auth_error_until.is_some();
         let password_len = self.password.chars().count();
 
@@ -216,10 +223,29 @@ impl App {
     }
 
     fn power_off_monitors(&mut self) {
-        self.monitors_off = true;
-        if let Some(command) = &self.config.power_off_command {
-            if let Some((program, args)) = command.split_first() {
-                let _ = Command::new(program).args(args).spawn();
+        let Some(command) = &self.config.power_off_command else {
+            return;
+        };
+        let Some((program, args)) = command.split_first() else {
+            eprintln!("waylock-rs: power-off-command is empty, ignoring");
+            return;
+        };
+        match Command::new(program).args(args).spawn() {
+            Ok(_) => {
+                self.monitors_off = true;
+            }
+            Err(error) => {
+                let now = Instant::now();
+                let log_again = self.last_power_off_error_log.is_none_or(|logged_at| {
+                    now.duration_since(logged_at) >= Duration::from_secs(30)
+                });
+                if log_again {
+                    eprintln!(
+                        "waylock-rs: failed to run power-off-command '{}': {error}",
+                        command.join(" "),
+                    );
+                    self.last_power_off_error_log = Some(now);
+                }
             }
         }
     }
@@ -310,6 +336,11 @@ impl SessionLockHandler for App {
         }
         surface.width = width;
         surface.height = height;
+        let timer = power_off_timer_text(
+            self.config.off_after,
+            0,
+            self.config.power_off_command.is_some(),
+        );
         draw_surface(
             surface,
             qh,
@@ -317,7 +348,7 @@ impl SessionLockHandler for App {
                 background: self.config.color,
                 clock: &local_clock(),
                 date: &local_date(),
-                timer: &format!("OFF IN {}", format_duration(self.config.off_after)),
+                timer: &timer,
                 password_len: 0,
                 show_error: false,
                 button_enabled: self.config.power_off_command.is_some(),
@@ -570,3 +601,53 @@ smithay_client_toolkit::delegate_seat!(App);
 smithay_client_toolkit::delegate_session_lock!(App);
 smithay_client_toolkit::delegate_shm!(App);
 wayland_client::delegate_noop!(App: ignore wl_buffer::WlBuffer);
+
+pub(crate) fn should_power_off(
+    monitors_off: bool,
+    elapsed_secs: u64,
+    off_after: u64,
+    has_command: bool,
+) -> bool {
+    has_command && !monitors_off && elapsed_secs >= off_after
+}
+
+pub(crate) fn power_off_timer_text(off_after: u64, elapsed_secs: u64, has_command: bool) -> String {
+    if !has_command {
+        return String::new();
+    }
+    let remaining = off_after.saturating_sub(elapsed_secs);
+    format!("OFF IN {}", format_duration(remaining))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{power_off_timer_text, should_power_off};
+
+    #[test]
+    fn fires_once_when_elapsed_reaches_off_after() {
+        assert!(should_power_off(false, 300, 300, true));
+        assert!(should_power_off(false, 301, 300, true));
+    }
+
+    #[test]
+    fn does_not_fire_without_command_latched_or_early() {
+        assert!(!should_power_off(false, 0, 300, true));
+        assert!(!should_power_off(false, 299, 300, true));
+        assert!(!should_power_off(true, 600, 300, true));
+        assert!(!should_power_off(false, 600, 300, false));
+    }
+
+    #[test]
+    fn timer_counts_down_and_saturates_at_zero() {
+        assert_eq!(power_off_timer_text(300, 0, true), "OFF IN 05:00");
+        assert_eq!(power_off_timer_text(300, 299, true), "OFF IN 00:01");
+        assert_eq!(power_off_timer_text(300, 300, true), "OFF IN 00:00");
+        assert_eq!(power_off_timer_text(300, 3600, true), "OFF IN 00:00");
+    }
+
+    #[test]
+    fn timer_hidden_when_power_off_disabled() {
+        assert_eq!(power_off_timer_text(300, 0, false), "");
+        assert_eq!(power_off_timer_text(300, 600, false), "");
+    }
+}
