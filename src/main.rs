@@ -608,11 +608,11 @@ pub(crate) fn should_power_off(
     off_after: u64,
     has_command: bool,
 ) -> bool {
-    has_command && !monitors_off && elapsed_secs >= off_after
+    has_command && off_after > 0 && !monitors_off && elapsed_secs >= off_after
 }
 
 pub(crate) fn power_off_timer_text(off_after: u64, elapsed_secs: u64, has_command: bool) -> String {
-    if !has_command {
+    if !has_command || off_after == 0 {
         return String::new();
     }
     let remaining = off_after.saturating_sub(elapsed_secs);
@@ -649,5 +649,13 @@ mod tests {
     fn timer_hidden_when_power_off_disabled() {
         assert_eq!(power_off_timer_text(300, 0, false), "");
         assert_eq!(power_off_timer_text(300, 600, false), "");
+        assert_eq!(power_off_timer_text(0, 0, true), "");
+        assert_eq!(power_off_timer_text(0, 3600, true), "");
+    }
+
+    #[test]
+    fn zero_off_after_never_fires() {
+        assert!(!should_power_off(false, 0, 0, true));
+        assert!(!should_power_off(false, 3600, 0, true));
     }
 }

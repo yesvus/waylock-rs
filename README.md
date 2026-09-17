@@ -60,7 +60,9 @@ power-off-command = niri msg action power-off-monitors
 ```
 
 Other compositors can use their own display-power command, or leave this to an
-idle daemon such as `swayidle`.
+idle daemon such as `swayidle`. Setting `off-after = 0` or leaving the command
+empty disables the countdown and the automatic power-off; the button is hidden
+when no command is configured.
 
 When the command is configured, the same action is available from the visible
 `SCREEN OFF` button on the lock surface.
