@@ -2,6 +2,7 @@
 color = 4B3F72
 
 # Seconds from lock start until the power-off command is run.
+# 0 disables the countdown and the automatic power-off.
 off-after = 300
 
 # Optional compositor-specific command. Leave empty to disable the button and
